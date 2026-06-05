@@ -1,4 +1,4 @@
-importScripts('./nacl-fast.min.js');
+importScripts('https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl-fast.min.js');
 
 let running = true;
 const MIN_LENGTH = 5;
