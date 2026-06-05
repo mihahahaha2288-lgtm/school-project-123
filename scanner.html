@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>TON Vanity Scanner</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#0a0a0a;color:#0f0;font:14px'Courier New',monospace;padding:20px;min-height:100vh}
+        h2{color:#0ff;margin-bottom:10px;font-size:20px}
+        .info{color:#888;margin-bottom:15px;font-size:12px}
+        #live{background:#111;border:1px solid #333;padding:15px;margin:15px 0;border-radius:8px;font-size:15px}
+        #live .speed{color:#ff0}#live .time{color:#0ff}#live .checked{color:#0f0}
+        #live .found-count{color:#f0f}#live .total{color:#0ff}#live .chance{color:#f80;font-weight:bold;font-size:18px}
+        #found{background:#0a1a0a;border:1px solid #0f0;padding:15px;margin:15px 0;border-radius:8px;max-height:300px;overflow-y:auto}
+        #found .item{border-bottom:1px solid #333;padding:10px 0}
+        #found .item:last-child{border-bottom:none}
+        #found .addr{color:#0ff;word-break:break-all}
+        #found .key{color:#ff0;word-break:break-all;font-size:12px}
+        #found .tag{color:#0f0;font-weight:bold}
+        #found .rare{color:#f0f;font-weight:bold;font-size:16px}
+        button{background:#0f0;color:#000;border:none;padding:8px 20px;font:14px'Courier New',monospace;cursor:pointer;margin:5px;border-radius:4px}
+        button:hover{background:#0c0}
+        button.stop{background:#f00;color:#fff}button.stop:hover{background:#c00}
+        button.reset{background:#f80;color:#000}button.reset:hover{background:#f60}
+        #status{color:#ff0;margin:10px 0;font-size:12px}
+    </style>
+</head>
+<body>
+    <h2>💎 TON Vanity Scanner — СРАЗУ после UQ</h2>
+    <div class="info">MIN_LENGTH=5 | tweetnacl локально | Только сразу после UQ</div>
+    <div id="status">⏳ Запуск...</div>
+    <div id="live">
+        <div>⏱ Сессия: <span class="time" id="elapsed">0ч 0м 0с</span></div>
+        <div>📊 За сессию: <span class="checked" id="checked">0</span></div>
+        <div>💾 Всего: <span class="total" id="totalEver">0</span></div>
+        <div>⚡ Скорость: <span class="speed" id="speed">0/сек</span></div>
+        <div>💎 Найдено: <span class="found-count" id="foundCount">0</span></div>
+        <div>🎯 Шанс в час: <span class="chance" id="hourChance">0.000%</span></div>
+        <div>🎲 Всего шанс: <span class="chance" id="totalChance">0.000%</span></div>
+        <div id="dots" style="color:#ff0;margin-top:5px">Ищем сразу после UQ<span id="animDots">....</span></div>
+    </div>
+    <button onclick="toggleView()">👁 Скрыть</button>
+    <button class="stop" onclick="stopAll()">⏹ Стоп</button>
+    <button class="reset" onclick="resetStats()">🔄 Сброс</button>
+    <div id="found"></div>
+
+    <script>
+        const MIN_LENGTH=5,RARE_LETTERS=['Q','Z','X','W','V'],AVG_FOR_FIND=41309068;
+        let totalEver=parseInt(localStorage.getItem('ton_totalEver')||'0');
+        let totalFoundEver=parseInt(localStorage.getItem('ton_totalFound')||'0');
+        let foundList=JSON.parse(localStorage.getItem('ton_foundList')||'[]');
+        let foundSet=new Set(foundList.map(f=>f.addr));
+        let sessionChecked=0,sessionFound=0,startTime=Date.now();
+        let showView=true,workers=[],running=false;
+        const THREADS=navigator.hardwareConcurrency||8;
+
+        function calcChance(t,s){const r=AVG_FOR_FIND-t;return r<=0?99.999:Math.min((s*3600/r)*100,99.999)}
+        function calcTotalChance(t){return Math.min((t/AVG_FOR_FIND)*100,99.999)}
+        function showFounds(){
+            if(foundList.length>20)foundList=foundList.slice(0,20);
+            let h='';
+            foundList.forEach(f=>{
+                const r=RARE_LETTERS.includes(f.tag.charAt(0));
+                h+=`<div class="item"><div class="tag ${r?'rare':''}">★ ${f.tag} ${r?'💎 РЕДКАЯ!':''}</div><div class="addr">Адрес: ${f.addr}</div><div class="key">HEX: ${f.key}</div></div>`;
+            });
+            document.getElementById('found').innerHTML=h||'<div style="color:#888">Пока ничего...</div>';
+        }
+        function saveStats(){
+            if(foundList.length>20)foundList=foundList.slice(0,20);
+            localStorage.setItem('ton_totalEver',totalEver);
+            localStorage.setItem('ton_totalFound',totalFoundEver);
+            localStorage.setItem('ton_foundList',JSON.stringify(foundList));
+        }
+        function updateLive(){
+            if(!showView){document.getElementById('live').innerHTML='<span style="color:#888">🔇 Скрыто</span>';return}
+            const e=Math.floor((Date.now()-startTime)/1000),s=e>0?Math.round(sessionChecked/e):0,t=totalEver+sessionChecked;
+            document.getElementById('elapsed').textContent=`${Math.floor(e/3600)}ч ${Math.floor((e%3600)/60)}м ${e%60}с`;
+            document.getElementById('checked').textContent=sessionChecked.toLocaleString();
+            document.getElementById('totalEver').textContent=t.toLocaleString();
+            document.getElementById('speed').textContent=`${s.toLocaleString()}/сек`;
+            document.getElementById('foundCount').textContent=totalFoundEver+sessionFound;
+            document.getElementById('hourChance').textContent=calcChance(t,s).toFixed(6)+'%';
+            document.getElementById('totalChance').textContent=calcTotalChance(t).toFixed(6)+'%';
+            document.getElementById('animDots').textContent=['.','..','...','....','.....','......'][Math.floor(Date.now()/300)%6];
+        }
+        function toggleView(){showView=!showView;updateLive()}
+        function stopAll(){
+            running=false;
+            workers.forEach(w=>{try{w.postMessage({type:'stop'})}catch(e){}});
+            setTimeout(()=>{
+                workers.forEach(w=>w.terminate());workers=[];
+                totalEver+=sessionChecked;totalFoundEver+=sessionFound;saveStats();
+                document.getElementById('live').innerHTML='<span style="color:#f00">⏹ Остановлено</span>';
+                document.getElementById('status').innerHTML='⏸ Остановлено';
+            },500);
+        }
+        function resetStats(){
+            if(confirm('Сбросить всё?')){
+                localStorage.clear();
+                totalEver=0;totalFoundEver=0;foundList=[];foundSet.clear();
+                sessionChecked=0;sessionFound=0;startTime=Date.now();
+                showFounds();updateLive();
+            }
+        }
+        function addFound(addr,key,tag){
+            if(foundSet.has(addr))return;
+            foundSet.add(addr);sessionFound++;
+            foundList.unshift({addr,key,tag});
+            if(foundList.length>20){const removed=foundList.pop();foundSet.delete(removed.addr)}
+            showFounds();
+        }
+        function startWorkers(){
+            if(workers.length>0){workers.forEach(w=>w.terminate());workers=[]}
+            running=true;sessionChecked=0;sessionFound=0;startTime=Date.now();
+            document.getElementById('status').innerHTML='🟢 Работает — '+THREADS+' потоков';
+            for(let i=0;i<THREADS;i++){
+                const w=new Worker('worker.js');
+                w.onmessage=(e)=>{
+                    if(e.data.type==='found')addFound(e.data.addr,e.data.privHex,e.data.result);
+                    if(e.data.type==='progress')sessionChecked+=e.data.checked;
+                };
+                w.onerror=(e)=>console.error('Worker',i,'error:',e);
+                workers.push(w);
+            }
+            showFounds();updateLive();
+        }
+        setInterval(()=>{if(running){totalEver+=sessionChecked;totalFoundEver+=sessionFound;sessionChecked=0;sessionFound=0;startTime=Date.now();saveStats()}},30000);
+        window.addEventListener('beforeunload',()=>{totalEver+=sessionChecked;totalFoundEver+=sessionFound;saveStats();workers.forEach(w=>w.terminate())});
+        startWorkers();setInterval(updateLive,1000);
+    </script>
+</body>
+</html>
