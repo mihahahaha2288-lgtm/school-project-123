@@ -1,4 +1,4 @@
-importScripts('nacl-fast.min.js');
+importScripts('./nacl-fast.min.js');
 
 let running = true;
 const MIN_LENGTH = 5;
