@@ -1,4 +1,14 @@
-importScripts('https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl-fast.min.js');
+try {
+    importScripts('https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl-fast.min.js');
+} catch(e) {
+    postMessage({type:'error', msg:'importScripts failed: '+e.message});
+}
+
+if (typeof nacl === 'undefined') {
+    postMessage({type:'error', msg:'nacl is undefined'});
+} else {
+    postMessage({type:'ready'});
+}
 
 let running = true;
 const MIN_LENGTH = 5;
@@ -55,7 +65,10 @@ async function go(){
                 postMessage({type:'found',result:r.text,rare:r.rare,addr:addr,privHex:hx});
             }
             if(localChecked>=500){postMessage({type:'progress',checked:localChecked});localChecked=0}
-        }catch(e){localChecked++}
+        }catch(e){
+            postMessage({type:'error',msg:'Loop error: '+e.message});
+            localChecked++;
+        }
     }
     if(localChecked>0)postMessage({type:'progress',checked:localChecked});
     postMessage({type:'stopped'});
